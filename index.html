@@ -35,6 +35,17 @@
       margin-bottom: 1rem;
       font-size: 1rem;
     }
+
+    .copy-icon {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      background: url('https://cdn-icons-png.flaticon.com/512/60/60990.png') no-repeat center center / contain;
+      cursor: pointer;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+
     input, button {
       padding: 0.6rem;
       border-radius: 6px;
@@ -225,6 +236,11 @@
       }).format(date).replace(/\//g, '-');
     }
 
+    function copyToClipboard(text) {
+      navigator.clipboard.writeText(text).then(() => {
+        alert('📋 已复制订单编号');
+      });
+    }
 
     async function searchStudent() {
       const id = document.getElementById('studentId').value.trim();
@@ -236,10 +252,15 @@
       if (entries && entries.length > 0) {
         let html = '';
         entries.forEach((data, index) => {
+          const orderId = data.订单编号 || '-'; // ✅ 这行是关键，定义 orderId
           const received = receivedList.find(([i]) => String(i).trim() === String(id).trim());
           html += `
             <div style="margin-bottom: 1rem; padding: 0.5rem; border: 1px dashed #ccc; border-radius: 6px;">
               <p><strong>记录 ${index + 1}</strong></p>
+              <p>
+                <strong>订单编号：</strong> ${orderId}
+                <span class="copy-icon" title="复制" onclick="copyToClipboard('${orderId}')"></span>
+              </p>
               <p><strong>名字：</strong> ${data.名字 || '-'}</p>
               <p><strong>学院：</strong> ${data.学院 || '-'}</p>
               <p><strong>专业：</strong> ${data.专业 || '-'}</p>
