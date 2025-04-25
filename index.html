@@ -127,6 +127,26 @@
     const API_URL = "https://script.google.com/macros/s/AKfycbxAyJYaOmX6HAdywU1de7X_Tz9yD9zv_x7d0GfbLJ3ZM9IZWKbElevNad_OkTmizkSxZQ/exec";
     let studentData = {}, currentId = null, receivedList = [];
 
+    // 仅在初始化或上传 Excel 时调用
+    async function initReceivedList() {
+      const res = await fetch(API_URL);
+      receivedList = await res.json();
+      receivedMap = new Map(receivedList.map(([id, , time]) => [id.trim(), time]));
+      updateColorOptionsAndStats();
+      filterStudents(); // 同步刷新筛选列表
+    }
+
+    // 自动加载缓存
+    window.addEventListener('DOMContentLoaded', async () => {
+      const cached = localStorage.getItem('studentData');
+      if (cached) {
+        studentData = JSON.parse(cached);
+        document.getElementById('currentFileName').textContent = '📦 当前为缓存数据';
+        alert(`📦 已载入 ${Object.keys(studentData).length} 位同学数据`);
+        await initReceivedList();
+      }
+    });
+
     document.getElementById('excelFile').addEventListener('change', function(e) {
       const file = e.target.files[0];
       document.getElementById('currentFileName').textContent = '✅ 当前文件：' + file.name;
@@ -154,15 +174,15 @@
     });
 
     // 自动加载缓存数据
-    window.addEventListener('DOMContentLoaded', () => {
-      const cached = localStorage.getItem('studentData');
-      if (cached) {
-        studentData = JSON.parse(cached);
-        document.getElementById('currentFileName').textContent = '📦 当前为缓存数据（上次上传 Excel）';
-        alert('📦 已载入上次上传的 Excel 数据，共 ' + Object.keys(studentData).length + ' 位同学');
-        updateReceivedList();
-      }
-    });
+    // window.addEventListener('DOMContentLoaded', () => {
+    //   const cached = localStorage.getItem('studentData');
+    //   if (cached) {
+    //     studentData = JSON.parse(cached);
+    //     document.getElementById('currentFileName').textContent = '📦 当前为缓存数据（上次上传 Excel）';
+    //     alert('📦 已载入上次上传的 Excel 数据，共 ' + Object.keys(studentData).length + ' 位同学');
+    //     updateReceivedList();
+    //   }
+    // });
 
     function clearCachedExcel() {
       localStorage.removeItem('studentData');
@@ -179,7 +199,6 @@
     async function markAsReceived() {
       if (!currentId || !studentData[currentId]) return;
 
-      // 取当前学号的任意一条记录的名字
       const entries = studentData[currentId];
       const name = entries[0]?.名字 || '';
 
@@ -188,10 +207,18 @@
         body: new URLSearchParams({ id: currentId, name })
       });
 
+      // ✅ 手动将新记录添加到 receivedList
+      const now = new Date().toISOString();
+      receivedList.push([currentId, name, now]);
+
       alert('✅ 已记录该同学为已领取');
-      await updateReceivedList();
+
+      // 🔄 局部刷新页面显示
       searchStudent();
+      updateColorOptionsAndStats();
     }
+
+
 
 
     async function cancelReceived(id) {
@@ -199,14 +226,13 @@
         const res = await fetch(API_URL, {
           method: 'POST',
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({
-            id: id,
-            _method: "delete"  // 👈 用这个字段来模拟 DELETE
-          })
+          body: new URLSearchParams({ id: id, _method: "delete" })
         });
 
         const text = await res.text();
         if (text.includes("deleted")) {
+          // ✅ 从 receivedList 中移除该条
+          receivedList = receivedList.filter(([rId]) => String(rId).trim() !== String(id).trim());
           alert("✅ 已取消该同学的领取记录");
         } else if (text.includes("not found")) {
           alert("⚠️ 找不到对应记录，可能已删除或学号不存在");
@@ -214,13 +240,14 @@
           alert("❌ 删除失败，请检查后端响应：" + text);
         }
 
-        await updateReceivedList();
-        if (currentId === id) searchStudent();
+        searchStudent();
+        updateColorOptionsAndStats();
       } catch (err) {
         alert("❌ 删除失败，网络或系统异常：" + err.message);
         console.error(err);
       }
     }
+
 
     function formatToBeijing(timeStr) {
       const date = new Date(timeStr);
@@ -246,21 +273,19 @@
       const id = document.getElementById('studentId').value.trim();
       currentId = id;
       const entries = studentData[id];
-      await fetchReceivedList();
       const result = document.getElementById('result');
 
       if (entries && entries.length > 0) {
         let html = '';
+        const received = receivedList.find(([i]) => String(i).trim() === String(id).trim());
+
         entries.forEach((data, index) => {
-          const orderId = data.订单编号 || '-'; // ✅ 这行是关键，定义 orderId
-          const received = receivedList.find(([i]) => String(i).trim() === String(id).trim());
+          const orderId = data.订单编号 || '-';
           html += `
             <div style="margin-bottom: 1rem; padding: 0.5rem; border: 1px dashed #ccc; border-radius: 6px;">
               <p><strong>记录 ${index + 1}</strong></p>
-              <p>
-                <strong>订单编号：</strong> ${orderId}
-                <span class="copy-icon" title="复制" onclick="copyToClipboard('${orderId}')"></span>
-              </p>
+              <p><strong>订单编号：</strong> ${orderId}
+              <span class="copy-icon" title="复制" onclick="copyToClipboard('${orderId}')"></span></p>
               <p><strong>名字：</strong> ${data.名字 || '-'}</p>
               <p><strong>学院：</strong> ${data.学院 || '-'}</p>
               <p><strong>专业：</strong> ${data.专业 || '-'}</p>
@@ -269,13 +294,12 @@
               <p><strong>尺码：</strong> ${data.尺码 || '-'}</p>
               <p><strong>颜色：</strong> ${data.颜色 || '-'}</p>
               ${received ? '<p style="color:green;font-weight:bold;">✅ 已领取</p>' : '<p style="color:gray;">⌛ 未领取</p>'}
-            </div>
-          `;
+            </div>`;
         });
 
         result.innerHTML = html;
         document.getElementById('markReceivedBtn').style.display = 'block';
-        document.getElementById('cancelReceivedBtn').style.display = receivedList.find(([i]) => String(i).trim() === String(id).trim()) ? 'block' : 'none';
+        document.getElementById('cancelReceivedBtn').style.display = received ? 'block' : 'none';
         result.style.display = 'block';
       } else {
         result.innerHTML = `<p style="color:red;">❌ 未找到该学号信息</p>`;
@@ -286,17 +310,13 @@
     }
 
 
+
     async function updateReceivedList() {
-      receivedList = []; // 清空旧数据
-      const ul = document.getElementById('receivedList');
-      ul.innerHTML = '';
-      const data = await fetchReceivedList();
-      data.forEach(([id, name, time]) => {
-        const li = document.createElement('li');
-        // li.innerHTML = `<div style="flex-grow:1;"><strong>${id}</strong> – ${name || '无名'}<br /><small>📅 ${formatToBeijing(time)}</small>`;
-        ul.appendChild(li);
-      });
+      await fetchReceivedList();
+      updateColorOptionsAndStats();
+      filterStudents();
     }
+
 
     async function filterById() {
       const id = document.getElementById('searchInput').value.trim();
@@ -305,7 +325,7 @@
 
       if (!id) return;
 
-      await fetchReceivedList();
+      // await initReceivedList();
 
       const entry = studentData[id];
       const data = Array.isArray(entry) ? entry[0] : entry;
@@ -460,7 +480,7 @@
       const ul = document.getElementById('receivedList');
       ul.innerHTML = '';
 
-      await fetchReceivedList();
+      await initReceivedList();
 
       const receivedMap = new Map(receivedList.map(([id, , time]) => [id.trim(), time]));
 
@@ -506,7 +526,7 @@
     });
 
     async function updateReceivedList() {
-      receivedList = await fetchReceivedList();
+      receivedList = await initReceivedList();
       updateColorOptionsAndStats(); // 更新统计
       filterStudents(); // 重新筛选一次展示
     }
