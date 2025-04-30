@@ -124,7 +124,7 @@
   </div>
 
   <script>
-    const API_URL = "https://script.google.com/macros/s/AKfycbxAyJYaOmX6HAdywU1de7X_Tz9yD9zv_x7d0GfbLJ3ZM9IZWKbElevNad_OkTmizkSxZQ/exec";
+    const API_URL = "https://script.google.com/macros/s/AKfycbxAb_b5NvIMI53F720dyM4iA99RCVcJHEF4TdpzWvu7uW34x9vcI16zb8rKxYFOQeX3kQ/exec";
     let studentData = {}, currentId = null, receivedList = [];
 
     // 仅在初始化或上传 Excel 时调用
@@ -200,20 +200,27 @@
       if (!currentId || !studentData[currentId]) return;
 
       const entries = studentData[currentId];
-      const name = entries[0]?.名字 || '';
+      const data = entries[0];
 
-      await fetch(API_URL, {
-        method: 'POST',
-        body: new URLSearchParams({ id: currentId, name })
+      const body = new URLSearchParams({
+        id: currentId,
+        name: data.名字 || '',
+        phone: data.手机号 || '',
+        major: data.专业 || '',
+        degree: data.学位 || '',
+        color: data.颜色 || '',
+        size: data.尺码 || '',
+        remark: data.备注 || ''
       });
 
-      // ✅ 手动将新记录添加到 receivedList
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        body: body
+      });
+
       const now = new Date().toISOString();
-      receivedList.push([currentId, name, now]);
-
+      receivedList.push([currentId, data.名字 || '', now]);
       alert('✅ 已记录该同学为已领取');
-
-      // 🔄 局部刷新页面显示
       searchStudent();
       updateColorOptionsAndStats();
     }
@@ -287,6 +294,7 @@
               <p><strong>订单编号：</strong> ${orderId}
               <span class="copy-icon" title="复制" onclick="copyToClipboard('${orderId}')"></span></p>
               <p><strong>名字：</strong> ${data.名字 || '-'}</p>
+              <p><strong>电话：</strong> ${data.手机号 || '-'}</p>
               <p><strong>学院：</strong> ${data.学院 || '-'}</p>
               <p><strong>专业：</strong> ${data.专业 || '-'}</p>
               <p><strong>学号：</strong> ${id}</p>
@@ -294,6 +302,11 @@
               <p><strong>尺码：</strong> ${data.尺码 || '-'}</p>
               <p><strong>颜色：</strong> ${data.颜色 || '-'}</p>
               ${received ? '<p style="color:green;font-weight:bold;">✅ 已领取</p>' : '<p style="color:gray;">⌛ 未领取</p>'}
+              <p>
+                <strong>备注：</strong>
+                <input type="text" id="remarkInput" placeholder="输入备注..." value="${data.备注 || ''}" style="width:90%;padding:4px;margin-top:4px;" />
+              </p>
+              <button onclick="saveRemark('${id}')">💾 保存备注</button>
             </div>`;
         });
 
@@ -343,6 +356,7 @@
         <div>
           <strong>${id}</strong> – ${data.名字 || '未填写'} – ${data.学院 || '未填写'}<br/>
           🎨 ${data.颜色 || '未标注'}<br/>
+          📝 备注：${data.备注 || '无'}<br/>
           <small style="color:${hasReceived ? 'green' : 'gray'};">
             ${hasReceived ? '✅ 已领取 ⏰ ' + receivedTime : '⌛ 未领取'}
           </small>
@@ -367,6 +381,41 @@
 
       // 你可以选择是否要在这里再次触发统计图更新：
       // updateColorOptionsAndStats();
+    }
+
+
+    async function saveRemark(id) {
+      const remark = document.getElementById('remarkInput').value.trim();
+
+      // ✅ 更新本地缓存
+      if (studentData[id]) {
+        studentData[id].forEach(entry => {
+          entry.备注 = remark;
+        });
+        localStorage.setItem('studentData', JSON.stringify(studentData));
+      }
+
+      // ✅ 发给后端同步
+      try {
+        const res = await fetch(API_URL, {
+          method: 'POST',
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            id,
+            remark,
+            _method: "remark"
+          })
+        });
+
+        const text = await res.text();
+        if (text.includes("updated")) {
+          alert("✅ 备注已成功同步到后端");
+        } else {
+          alert("⚠️ 本地已保存，但后端未返回成功：" + text);
+        }
+      } catch (err) {
+        alert("❌ 网络异常，备注仅保存在本地：" + err.message);
+      }
     }
 
 
@@ -553,6 +602,7 @@
           return [
             id,
             data.名字 || '',
+            data.手机号 || '',
             data.学院 || '',
             data.专业 || '',
             data.学位 || '',
@@ -566,7 +616,7 @@
         return;
       }
 
-      const headers = ['学号', '名字', '学院', '专业', '学位', '尺码', '颜色'];
+      const headers = ['学号', '名字', '手机号','学院', '专业', '学位', '尺码', '颜色'];
       const rows = [headers, ...unreceived];
 
       const ws = XLSX.utils.aoa_to_sheet(rows);
