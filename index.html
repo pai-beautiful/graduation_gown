@@ -115,6 +115,9 @@
     </div>
 
     <div id="colorStats" class="record-section"></div>
+    <div id="sizeStats" class="record-section"></div>
+    <div id="degreeStats" class="record-section"></div>
+
     <!-- <canvas id="colorBarChart" height="300" style="margin-top: 1rem;"></canvas> -->
 
 
@@ -124,7 +127,7 @@
   </div>
 
   <script>
-    const API_URL = "https://script.google.com/macros/s/AKfycbxAb_b5NvIMI53F720dyM4iA99RCVcJHEF4TdpzWvu7uW34x9vcI16zb8rKxYFOQeX3kQ/exec";
+    const API_URL = "https://script.google.com/macros/s/AKfycbw7NrHEX0J9d4_0xtqP0LZGuTo3DGwp4hhH6obopmd0bk2JG05o8jFFHapyVUoG_zei4w/exec";
     let studentData = {}, currentId = null, receivedList = [];
 
     // 仅在初始化或上传 Excel 时调用
@@ -205,7 +208,8 @@
       const body = new URLSearchParams({
         id: currentId,
         name: data.名字 || '',
-        phone: data.手机号 || '',
+        phone: data.内地手机 || '',
+        hkPhone: data.香港手机 || '',
         major: data.专业 || '',
         degree: data.学位 || '',
         color: data.颜色 || '',
@@ -294,13 +298,15 @@
               <p><strong>订单编号：</strong> ${orderId}
               <span class="copy-icon" title="复制" onclick="copyToClipboard('${orderId}')"></span></p>
               <p><strong>名字：</strong> ${data.名字 || '-'}</p>
-              <p><strong>电话：</strong> ${data.手机号 || '-'}</p>
+              <p><strong>内地电话：</strong> ${data.内地手机 || '-'}</p>
+              <p><strong>香港电话：</strong> ${data.香港手机 || '-'}</p>
               <p><strong>学院：</strong> ${data.学院 || '-'}</p>
               <p><strong>专业：</strong> ${data.专业 || '-'}</p>
               <p><strong>学号：</strong> ${id}</p>
               <p><strong>学位：</strong> ${data.学位 || '-'}</p>
               <p><strong>尺码：</strong> ${data.尺码 || '-'}</p>
               <p><strong>颜色：</strong> ${data.颜色 || '-'}</p>
+              <p><strong>领取物品：</strong> ${data.领取物品 || '-'}</p>
               ${received ? '<p style="color:green;font-weight:bold;">✅ 已领取</p>' : '<p style="color:gray;">⌛ 未领取</p>'}
               <p>
                 <strong>备注：</strong>
@@ -471,6 +477,46 @@
       statHTML += '</ul>';
       document.getElementById('colorStats').innerHTML = statHTML;
 
+      // 📏 尺码统计
+      const sizeMap = {};
+      for (const [id, entries] of Object.entries(studentData)) {
+        entries.forEach(data => {
+          const size = data.尺码 || '未标注';
+          if (!sizeMap[size]) sizeMap[size] = { total: 0, received: 0 };
+          sizeMap[size].total++;
+          if (receivedIdSet.has(id)) sizeMap[size].received++;
+        });
+      }
+
+      // 🎓 学位统计
+      const degreeMap = {};
+      for (const [id, entries] of Object.entries(studentData)) {
+        entries.forEach(data => {
+          const degree = data.学位 || '未标注';
+          if (!degreeMap[degree]) degreeMap[degree] = { total: 0, received: 0 };
+          degreeMap[degree].total++;
+          if (receivedIdSet.has(id)) degreeMap[degree].received++;
+        });
+      }
+
+      let degreeHTML = '<h3>🎓 学位统计</h3><ul>';
+      for (const degree in degreeMap) {
+        const { total, received } = degreeMap[degree];
+        degreeHTML += `<li><strong>${degree}</strong>：共 ${total} 人，✅ ${received} 已领取，⌛ ${total - received} 未领取</li>`;
+      }
+      degreeHTML += '</ul>';
+      document.getElementById('degreeStats').innerHTML = degreeHTML;
+
+
+      let sizeHTML = '<h3>📏 尺码统计</h3><ul>';
+      for (const size in sizeMap) {
+        const { total, received } = sizeMap[size];
+        sizeHTML += `<li><strong>${size}</strong>：共 ${total} 人，✅ ${received} 已领取，⌛ ${total - received} 未领取</li>`;
+      }
+      sizeHTML += '</ul>';
+      document.getElementById('sizeStats').innerHTML = sizeHTML;
+
+
       // 图表部分
       const labels = Object.keys(colorMap);
       const totalData = labels.map(c => colorMap[c].total);
@@ -582,7 +628,7 @@
 
     async function exportReceivedList() {
       const data = await fetchReceivedList();
-      const headers = ['学号', '名字', '领取时间'];
+      const headers = ['学号', '名字', '领取时间','内地手机','香港手机','专业','学位','颜色','尺码','备注'];
       const rows = [headers, ...data];
 
       const ws = XLSX.utils.aoa_to_sheet(rows);
@@ -602,12 +648,15 @@
           return [
             id,
             data.名字 || '',
-            data.手机号 || '',
+            data.内地手机 || '',
+            data.香港手机 || '',
             data.学院 || '',
             data.专业 || '',
             data.学位 || '',
             data.尺码 || '',
-            data.颜色 || ''
+            data.颜色 || '',
+            data.领取物品 || ''
+
           ];
         });
 
@@ -616,7 +665,7 @@
         return;
       }
 
-      const headers = ['学号', '名字', '手机号','学院', '专业', '学位', '尺码', '颜色'];
+      const headers = ['学号', '名字', '内地手机','香港手机','学院', '专业', '学位', '尺码', '颜色','领取物品'];
       const rows = [headers, ...unreceived];
 
       const ws = XLSX.utils.aoa_to_sheet(rows);
